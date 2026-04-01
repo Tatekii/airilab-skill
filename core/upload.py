@@ -11,7 +11,10 @@ import requests
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-from .config import AiriLabConfig
+try:
+    from .config import AiriLabConfig
+except ImportError:  # pragma: no cover
+    from config import AiriLabConfig
 
 # API 端点
 UPLOAD_URL = "https://cn.airilab.com/api/Workflow/UploadMedia"

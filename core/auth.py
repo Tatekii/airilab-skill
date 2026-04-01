@@ -15,7 +15,10 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 from datetime import datetime
 
-from .config import AiriLabConfig
+try:
+    from .config import AiriLabConfig
+except ImportError:  # pragma: no cover
+    from config import AiriLabConfig
 
 # API 端点
 SEND_OTP_URL = "https://cn.airilab.com/api/Accounts/Login"

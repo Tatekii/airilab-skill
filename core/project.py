@@ -13,7 +13,10 @@ import json
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
-from .config import AiriLabConfig
+try:
+    from .config import AiriLabConfig
+except ImportError:  # pragma: no cover
+    from config import AiriLabConfig
 
 # API 端点
 GET_TEAMS_URL = "https://cn.airilab.com/api/Team/GetUserTeams"

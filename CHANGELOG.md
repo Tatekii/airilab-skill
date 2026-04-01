@@ -1,5 +1,22 @@
 # AiriLab Skill 更新日志
 
+## [1.2.0] 2026-04-01 - Worker Reliability and Runtime Fixes
+
+### Fixed
+- Standardized task status output in `scripts/check_status.py` to machine-readable `status:<value>`.
+- Removed hardcoded `projectId/teamId` in status checking and switched to config-based project context.
+- Updated `scheduler/worker.py` to call child scripts with `sys.executable` instead of hardcoded `python3`.
+- Fixed result handling in worker: treat `success=false` from `fetch.py` as task failure.
+- Removed duplicate unreachable `workflow_id == 13` branch in `core/api.py`.
+- Added import fallbacks in core modules to support direct script execution.
+
+### Added
+- Added `requirements.txt` with `requests>=2.31.0`.
+
+### Notes
+- This release focuses on reducing false pending/unknown states and improving cross-environment runtime stability.
+
+
 ## [1.1.0] 2026-03-31 - P0 问题修复
 
 ### ✅ 已修复

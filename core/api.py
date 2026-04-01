@@ -14,9 +14,14 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 
-from .config import AiriLabConfig
-from .auth import AiriLabAuth
-from .upload import AiriLabUpload
+try:
+    from .config import AiriLabConfig
+    from .auth import AiriLabAuth
+    from .upload import AiriLabUpload
+except ImportError:  # pragma: no cover
+    from config import AiriLabConfig
+    from auth import AiriLabAuth
+    from upload import AiriLabUpload
 
 # API 端点
 GENERATE_URL = "https://cn.airilab.com/api/Universal/Generate"
@@ -226,17 +231,6 @@ class AiriLabAPI:
                 "projectId": project['projectId'],
                 "projectName": project['projectName']
             }
-        
-        elif workflow_id == 13:  # 氛围转换
-            payload["baseImage"] = base_image
-            payload["prompt"] = prompt
-            payload["additionalPrompt"] = prompt
-            if reference_images:
-                payload["referenceImage"] = [
-                    {"url": reference_images[0], "type": 0}
-                ]
-            else:
-                payload["referenceImage"] = []
         
         else:
             # 默认简化的 payload
