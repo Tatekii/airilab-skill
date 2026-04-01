@@ -30,7 +30,6 @@ LOG_FILE = DATA_DIR / 'worker.log'
 POLL_INTERVAL = 15
 MAX_ATTEMPTS = 60
 TIMEOUT_MINUTES = 15
-RETRYABLE_ERROR_LIMIT = 5
 
 STATUS_PENDING = 'pending'
 STATUS_PROCESSING = 'processing'
@@ -319,17 +318,6 @@ def notify_user(user_id: str, chat_id: str, job_id: str, status: str, output_url
         f.write(f"{datetime.now().isoformat()} | {user_id} | {chat_id} | {job_id} | {status}\n")
 
 
-def _mark_retryable_or_fail(job_id: str, user_id: str, chat_id: str, tool: str, attempts: int, reason: str) -> None:
-    if attempts + 1 >= RETRYABLE_ERROR_LIMIT:
-        detail = f'{reason} (reached retry limit={RETRYABLE_ERROR_LIMIT})'
-        update_job_status(job_id, STATUS_FAILED, error_message=detail)
-        notify_user(user_id, chat_id, job_id, STATUS_FAILED, error_message=detail, tool=tool)
-        return
-
-    logger.warning(f'retryable error for job={job_id}, attempt={attempts + 1}: {reason}')
-    update_job_status(job_id, STATUS_PENDING)
-
-
 def process_job(job):
     job_id = job['job_id']
     user_id = job['user_id']
@@ -359,42 +347,29 @@ def process_job(job):
     logger.info(f'checking job={job_id} attempt={attempts + 1}/{MAX_ATTEMPTS} elapsed={elapsed:.1f}m')
     status = check_job_status(job_id)
 
-    if status == STATUS_COMPLETED:
-        result = fetch_result(job_id)
-        if result.get('error') or not result.get('success', False):
-            detail = result.get('error') or result.get('message') or 'fetch_failed'
-            _mark_retryable_or_fail(job_id, user_id, chat_id, tool, attempts, f'fetch_failed:{detail}')
-            return
-
-        output_urls = result.get('output_urls', [])
-        thumbnail_url = result.get('thumbnail_url', '')
-        result_tool = result.get('toolset', tool)
-
-        update_job_status(job_id, STATUS_COMPLETED, output_url=json.dumps(output_urls), thumbnail_url=thumbnail_url)
-        notify_user(user_id, chat_id, job_id, STATUS_COMPLETED, output_urls=output_urls, tool=result_tool)
+    # 业务规则：只要状态不是 processing，就视为生成流程结束并立即拉取结果。
+    if status == STATUS_PROCESSING:
+        update_job_status(job_id, STATUS_PROCESSING)
         return
 
-    if status == 'auth_error':
-        detail = 'Token 过期，请重新登录'
+    result = fetch_result(job_id)
+    if result.get('error') or not result.get('success', False):
+        fetch_detail = result.get('error') or result.get('message') or 'fetch_failed'
+        if status == 'auth_error':
+            detail = 'Token 过期，请重新登录'
+        else:
+            detail = f'终态={status}, 拉取结果失败: {fetch_detail}'
         update_job_status(job_id, STATUS_FAILED, error_message=detail)
         notify_user(user_id, chat_id, job_id, STATUS_FAILED, error_message=detail, tool=tool)
         return
 
-    if status == STATUS_FAILED:
-        detail = f'API 返回状态: {status}'
-        update_job_status(job_id, STATUS_FAILED, error_message=detail)
-        notify_user(user_id, chat_id, job_id, STATUS_FAILED, error_message=detail, tool=tool)
-        return
+    output_urls = result.get('output_urls', [])
+    thumbnail_url = result.get('thumbnail_url', '')
+    result_tool = result.get('toolset', tool)
 
-    if status in {'error', 'unknown'}:
-        _mark_retryable_or_fail(job_id, user_id, chat_id, tool, attempts, f'status:{status}')
-        return
-
-    if status in {'queued', 'sending_now', STATUS_PROCESSING}:
-        update_job_status(job_id, STATUS_PROCESSING if status != 'queued' else STATUS_PENDING)
-        return
-
-    update_job_status(job_id, STATUS_PENDING)
+    update_job_status(job_id, STATUS_COMPLETED, output_url=json.dumps(output_urls), thumbnail_url=thumbnail_url)
+    notify_user(user_id, chat_id, job_id, STATUS_COMPLETED, output_urls=output_urls, tool=result_tool)
+    return
 
 
 def run():

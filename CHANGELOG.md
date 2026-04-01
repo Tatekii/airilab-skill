@@ -1,5 +1,16 @@
 ﻿# AiriLab Skill 更新日志
 
+
+## [1.4.1] 2026-04-01 - Polling Terminal-State Rule Update
+
+### Changed
+- Updated `scheduler/worker.py` polling behavior: only `status=processing` is treated as in-progress.
+- For any non-`processing` status, worker now treats the job as ended and immediately calls `fetch.py` to retrieve generation results.
+
+### Fixed
+- Removed retryable-status branch to align runtime behavior with the new terminal-state rule.
+- On fetch failure after terminal state, task is marked failed with terminal status + fetch error context.
+
 ## [1.4.0] 2026-04-01 - Post-install Bootstrap and Legacy Cleanup
 
 ### Added
