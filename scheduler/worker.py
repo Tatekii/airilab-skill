@@ -5,6 +5,7 @@ AiriLab background polling worker.
 
 import json
 import logging
+import os
 import re
 import sqlite3
 import subprocess
@@ -13,7 +14,28 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-LOG_FILE = Path(__file__).parent / 'worker.log'
+AIRILAB_PATH = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(AIRILAB_PATH))
+
+from core.paths import ensure_runtime_dirs, get_scheduler_dir  # noqa: E402
+
+ensure_runtime_dirs()
+
+DATA_DIR = get_scheduler_dir()
+SCRIPTS_DIR = AIRILAB_PATH / 'scripts'
+DB_PATH = DATA_DIR / 'jobs.db'
+PID_FILE = DATA_DIR / 'worker.pid'
+LOG_FILE = DATA_DIR / 'worker.log'
+
+POLL_INTERVAL = 15
+MAX_ATTEMPTS = 60
+TIMEOUT_MINUTES = 15
+RETRYABLE_ERROR_LIMIT = 5
+
+STATUS_PENDING = 'pending'
+STATUS_PROCESSING = 'processing'
+STATUS_COMPLETED = 'completed'
+STATUS_FAILED = 'failed'
 
 logging.basicConfig(
     level=logging.INFO,
@@ -26,20 +48,71 @@ logging.basicConfig(
 )
 logger = logging.getLogger('airilab-worker')
 
-AIRILAB_PATH = Path(__file__).parent.parent
-sys.path.insert(0, str(AIRILAB_PATH))
 
-SCRIPTS_DIR = AIRILAB_PATH / 'scripts'
-DATA_DIR = Path(__file__).parent
-DB_PATH = DATA_DIR / 'jobs.db'
-POLL_INTERVAL = 15
-MAX_ATTEMPTS = 60
-TIMEOUT_MINUTES = 15
+class WorkerLockError(RuntimeError):
+    pass
 
-STATUS_PENDING = 'pending'
-STATUS_PROCESSING = 'processing'
-STATUS_COMPLETED = 'completed'
-STATUS_FAILED = 'failed'
+
+def _is_pid_running(pid: int) -> bool:
+    if pid <= 0:
+        return False
+
+    try:
+        if os.name == 'nt':
+            import ctypes
+
+            PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+            handle = ctypes.windll.kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+            if handle:
+                ctypes.windll.kernel32.CloseHandle(handle)
+                return True
+            return False
+
+        os.kill(pid, 0)
+        return True
+    except Exception:
+        return False
+
+
+def acquire_worker_lock() -> None:
+    if PID_FILE.exists():
+        try:
+            existing_pid = int(PID_FILE.read_text(encoding='utf-8').strip())
+        except Exception:
+            existing_pid = 0
+
+        if _is_pid_running(existing_pid):
+            raise WorkerLockError(f'worker already running (pid={existing_pid})')
+
+        try:
+            PID_FILE.unlink()
+        except Exception:
+            pass
+
+    PID_FILE.write_text(str(os.getpid()), encoding='utf-8')
+
+
+def release_worker_lock() -> None:
+    try:
+        if PID_FILE.exists():
+            content = PID_FILE.read_text(encoding='utf-8').strip()
+            if content == str(os.getpid()):
+                PID_FILE.unlink()
+    except Exception:
+        pass
+
+
+def startup_self_check() -> None:
+    if not SCRIPTS_DIR.exists():
+        raise RuntimeError(f'scripts dir missing: {SCRIPTS_DIR}')
+
+    required_scripts = [SCRIPTS_DIR / 'check_status.py', SCRIPTS_DIR / 'fetch.py']
+    for script in required_scripts:
+        if not script.exists():
+            raise RuntimeError(f'missing required script: {script}')
+
+    ensure_runtime_dirs()
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def init_db():
@@ -157,10 +230,10 @@ def check_job_status(job_id: str) -> str:
             timeout=30,
         )
     except subprocess.TimeoutExpired:
-        logger.error(f'check status timeout: {job_id}')
+        logger.warning(f'check status timeout: {job_id}')
         return 'error'
     except Exception as e:
-        logger.error(f'check status failed {job_id}: {e}')
+        logger.warning(f'check status failed {job_id}: {e}')
         return 'error'
 
     output = ((result.stdout or '') + '\n' + (result.stderr or '')).strip()
@@ -246,11 +319,22 @@ def notify_user(user_id: str, chat_id: str, job_id: str, status: str, output_url
         f.write(f"{datetime.now().isoformat()} | {user_id} | {chat_id} | {job_id} | {status}\n")
 
 
+def _mark_retryable_or_fail(job_id: str, user_id: str, chat_id: str, tool: str, attempts: int, reason: str) -> None:
+    if attempts + 1 >= RETRYABLE_ERROR_LIMIT:
+        detail = f'{reason} (reached retry limit={RETRYABLE_ERROR_LIMIT})'
+        update_job_status(job_id, STATUS_FAILED, error_message=detail)
+        notify_user(user_id, chat_id, job_id, STATUS_FAILED, error_message=detail, tool=tool)
+        return
+
+    logger.warning(f'retryable error for job={job_id}, attempt={attempts + 1}: {reason}')
+    update_job_status(job_id, STATUS_PENDING)
+
+
 def process_job(job):
     job_id = job['job_id']
     user_id = job['user_id']
     chat_id = job['chat_id']
-    attempts = job['attempts']
+    attempts = int(job['attempts'] or 0)
     tool = job['tool']
     submitted_at = job['submitted_at']
 
@@ -279,8 +363,7 @@ def process_job(job):
         result = fetch_result(job_id)
         if result.get('error') or not result.get('success', False):
             detail = result.get('error') or result.get('message') or 'fetch_failed'
-            update_job_status(job_id, STATUS_FAILED, error_message=f'获取结果失败: {detail}')
-            notify_user(user_id, chat_id, job_id, STATUS_FAILED, error_message=f'获取结果失败: {detail}', tool=tool)
+            _mark_retryable_or_fail(job_id, user_id, chat_id, tool, attempts, f'fetch_failed:{detail}')
             return
 
         output_urls = result.get('output_urls', [])
@@ -291,10 +374,20 @@ def process_job(job):
         notify_user(user_id, chat_id, job_id, STATUS_COMPLETED, output_urls=output_urls, tool=result_tool)
         return
 
-    if status in {STATUS_FAILED, 'error', 'auth_error'}:
-        detail = 'Token 过期，请重新登录' if status == 'auth_error' else f'API 返回状态: {status}'
+    if status == 'auth_error':
+        detail = 'Token 过期，请重新登录'
         update_job_status(job_id, STATUS_FAILED, error_message=detail)
         notify_user(user_id, chat_id, job_id, STATUS_FAILED, error_message=detail, tool=tool)
+        return
+
+    if status == STATUS_FAILED:
+        detail = f'API 返回状态: {status}'
+        update_job_status(job_id, STATUS_FAILED, error_message=detail)
+        notify_user(user_id, chat_id, job_id, STATUS_FAILED, error_message=detail, tool=tool)
+        return
+
+    if status in {'error', 'unknown'}:
+        _mark_retryable_or_fail(job_id, user_id, chat_id, tool, attempts, f'status:{status}')
         return
 
     if status in {'queued', 'sending_now', STATUS_PROCESSING}:
@@ -306,13 +399,17 @@ def process_job(job):
 
 def run():
     logger.info('=' * 60)
-    logger.info('AiriLab worker started')
+    logger.info('AiriLab worker starting')
     logger.info(f'data_dir={DATA_DIR}')
     logger.info(f'db={DB_PATH}')
     logger.info(f'poll_interval={POLL_INTERVAL}s timeout={TIMEOUT_MINUTES}m max_attempts={MAX_ATTEMPTS}')
+
+    startup_self_check()
     init_db()
+    acquire_worker_lock()
 
     try:
+        logger.info(f'worker lock acquired pid={os.getpid()}')
         while True:
             jobs = get_pending_jobs()
             if jobs:
@@ -325,7 +422,13 @@ def run():
             time.sleep(POLL_INTERVAL)
     except KeyboardInterrupt:
         logger.info('worker stopped')
+    finally:
+        release_worker_lock()
 
 
 if __name__ == '__main__':
-    run()
+    try:
+        run()
+    except WorkerLockError as e:
+        logger.error(str(e))
+        sys.exit(1)

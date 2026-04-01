@@ -1,8 +1,7 @@
 ﻿#!/usr/bin/env python3
 """
 AiriLab task status checker.
-
-Always prints a machine-readable line in the form `status:<value>`.
+Always prints a machine-readable line: status:<value>
 """
 
 import sys
@@ -10,7 +9,12 @@ from pathlib import Path
 
 import requests
 
-CONFIG_DIR = Path.home() / '.openclaw' / 'skills' / 'airilab' / 'config'
+AIRILAB_PATH = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(AIRILAB_PATH))
+
+from core.paths import get_config_dir  # noqa: E402
+
+CONFIG_DIR = get_config_dir()
 TOKEN_FILE = CONFIG_DIR / '.env'
 STATUS_URL_TEMPLATE = 'https://cn.airilab.com/api/Universal/Job/{job_id}'
 
