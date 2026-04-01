@@ -3,16 +3,14 @@
 AiriLab API 调用
 
 整合原 api-list 技能的核心功能：
-1. 提交任务（MJ 渲染、超分辨率、氛围转换）
+1. 提交任务（MJ 渲染、创意放大、氛围转换）
 2. 自动处理认证和项目配置
 3. 统一的错误处理
 """
 
 import requests
 import json
-from pathlib import Path
-from typing import Dict, Any, Optional, List
-from datetime import datetime
+from typing import Dict, Any, List
 
 try:
     from .config import AiriLabConfig
@@ -25,6 +23,9 @@ except ImportError:  # pragma: no cover
 
 # API 端点
 GENERATE_URL = "https://cn.airilab.com/api/Universal/Generate"
+WORKFLOW_MJ = 0
+WORKFLOW_UPSCALE = 16
+WORKFLOW_ATMOSPHERE = 13
 
 # 请求头模板
 DEFAULT_HEADERS = {
@@ -32,7 +33,6 @@ DEFAULT_HEADERS = {
     "accept-language": "zh-CN,zh;q=0.9,en;q=0.8",
     "content-type": "application/json",
     "origin": "https://cn.airilab.com",
-    "referer": "https://cn.airilab.com/stdio/workspace/130538",
     "user-agent": "Mozilla/5.0"
 }
 
@@ -120,7 +120,7 @@ class AiriLabAPI:
             dict: 请求 payload
         """
         # MJ 创意渲染工作流 (workflowId: 4)
-        if workflow_id == 0:
+        if workflow_id == WORKFLOW_MJ:
             payload = {
                 "model": 0,
                 "orientation": 0,
@@ -129,7 +129,7 @@ class AiriLabAPI:
                     {"url": url, "type": 0} for url in (reference_images or [])[:3]
                 ] if reference_images else [],
                 "prompt": prompt,
-                "workflowId": 4,
+                "workflowId": WORKFLOW_MJ,
                 "additionalPrompt": prompt,
                 "designLibraryName": "No Style",
                 "designLibraryId": 99,
@@ -170,12 +170,12 @@ class AiriLabAPI:
                 "projectName": project['projectName']
             }
         
-        # 创意超分辨率工作流 (workflowId: 16)
-        elif workflow_id == 15:
+        # 创意放大工作流 (workflowId: 16)
+        elif workflow_id == WORKFLOW_UPSCALE:
             payload = {
                 "initialCNImage": None,
                 "baseImage": base_image or "",
-                "workflowId": 16,
+                "workflowId": WORKFLOW_UPSCALE,
                 "additionalPrompt": "",
                 "referenceImage": [],
                 "designLibraryName": "No Style",
@@ -216,9 +216,9 @@ class AiriLabAPI:
             }
         
         # 氛围转换工作流 (workflowId: 13)
-        elif workflow_id == 13:
+        elif workflow_id == WORKFLOW_ATMOSPHERE:
             payload = {
-                "workflowId": 13,
+                "workflowId": WORKFLOW_ATMOSPHERE,
                 "baseImage": base_image or "",
                 "prompt": prompt,
                 "additionalPrompt": prompt,
@@ -244,13 +244,20 @@ class AiriLabAPI:
             }
         
         return payload
+
+    def _build_headers(self, token: str, project_id: int) -> Dict[str, str]:
+        headers = DEFAULT_HEADERS.copy()
+        headers["Authorization"] = f"Bearer {token}"
+        headers["referer"] = f"https://cn.airilab.com/stdio/workspace/{project_id}"
+        return headers
+
     
     def submit_task(self, workflow_id: int, **kwargs) -> Dict[str, Any]:
         """
         提交生成任务
         
         参数:
-            workflow_id: 工作流 ID (4=MJ, 16=超分辨率，13=氛围转换)
+            workflow_id: 工作流 ID (0=MJ, 16=创意放大，13=氛围转换)
             **kwargs: 工作流特定参数
         
         返回:
@@ -282,8 +289,10 @@ class AiriLabAPI:
         )
         
         # 提交任务
-        headers = DEFAULT_HEADERS.copy()
-        headers["Authorization"] = f"Bearer {ready['token']}"
+        headers = self._build_headers(
+            token=ready['token'],
+            project_id=ready['project']['projectId']
+        )
         
         try:
             response = requests.post(
@@ -340,7 +349,7 @@ class AiriLabAPI:
             dict: 提交结果
         """
         return self.submit_task(
-            workflow_id=0,  # text - MJ 创意渲染
+            workflow_id=WORKFLOW_MJ,
             prompt=prompt,
             reference_images=reference_images,
             image_count=image_count
@@ -349,7 +358,7 @@ class AiriLabAPI:
     def upscale(self, base_image: str, width: int = 1288, 
                 height: int = 816) -> Dict[str, Any]:
         """
-        提交超分辨率任务
+        提交创意放大任务
         
         参数:
             base_image: 基图 URL
@@ -360,7 +369,7 @@ class AiriLabAPI:
             dict: 提交结果
         """
         return self.submit_task(
-            workflow_id=15,  # upscale - 超分辨率放大
+            workflow_id=WORKFLOW_UPSCALE,
             base_image=base_image,
             width=width,
             height=height
@@ -384,7 +393,7 @@ class AiriLabAPI:
         reference_images = [reference_image] if reference_image else None
         
         return self.submit_task(
-            workflow_id=13,
+            workflow_id=WORKFLOW_ATMOSPHERE,
             base_image=base_image,
             prompt=prompt,
             reference_images=reference_images,
@@ -402,7 +411,7 @@ if __name__ == "__main__":
                        choices=["mj", "upscale", "atmosphere"],
                        help="工具类型")
     parser.add_argument("--prompt", help="提示词（用于 MJ 和 atmosphere）")
-    parser.add_argument("--base-image", help="基图 URL（用于 upscale 和 atmosphere）")
+    parser.add_argument("--base-image", help="基图 URL（用于创意放大和 atmosphere）")
     parser.add_argument("--image-count", type=int, default=4, help="生成图片数量")
     
     args = parser.parse_args()
@@ -422,7 +431,7 @@ if __name__ == "__main__":
     
     elif args.tool == "upscale":
         if not args.base_image:
-            print("❌ 错误：upscale 需要 --base-image 参数")
+            print("❌ 错误：创意放大需要 --base-image 参数")
         else:
             result = api.upscale(args.base_image)
             if result['success']:

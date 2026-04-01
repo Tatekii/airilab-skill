@@ -5,7 +5,6 @@ AiriLab task status checker.
 Always prints a machine-readable line in the form `status:<value>`.
 """
 
-import json
 import sys
 from pathlib import Path
 
@@ -13,8 +12,7 @@ import requests
 
 CONFIG_DIR = Path.home() / '.openclaw' / 'skills' / 'airilab' / 'config'
 TOKEN_FILE = CONFIG_DIR / '.env'
-PROJECT_FILE = CONFIG_DIR / 'project_config.json'
-STATUS_URL = 'https://cn.airilab.com/api/CrudRouters/getOneRecord'
+STATUS_URL_TEMPLATE = 'https://cn.airilab.com/api/Universal/Job/{job_id}'
 
 
 def get_token():
@@ -28,23 +26,13 @@ def get_token():
     return None
 
 
-def get_project_config():
-    if not PROJECT_FILE.exists():
-        return None
-    try:
-        with open(PROJECT_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except Exception:
-        return None
-
-
 def normalize_status(raw_status: str) -> str:
     value = (raw_status or '').strip().lower()
     if value in {'completed', 'success', 'succeeded', 'done'}:
         return 'completed'
     if value in {'failed', 'failure', 'error'}:
         return 'failed'
-    if value in {'processing', 'running', 'sending_now'}:
+    if value in {'processing', 'running', 'sending_now', 'in_progress'}:
         return 'processing'
     if value in {'queued', 'pending', ''}:
         return 'pending'
@@ -58,25 +46,14 @@ def check_status(job_id: str) -> str:
         print('status:error')
         return 'error'
 
-    project = get_project_config()
-    if not project:
-        print('error:missing_project')
-        print('status:error')
-        return 'error'
-
     headers = {
         'Authorization': f'Bearer {token}',
-        'Content-Type': 'application/json',
+        'accept': 'application/json',
     }
-    payload = {
-        'projectId': project.get('projectId'),
-        'teamId': project.get('teamId', 0),
-        'language': 'chs',
-        'desiredGenerationId': job_id,
-    }
+    url = STATUS_URL_TEMPLATE.format(job_id=job_id)
 
     try:
-        response = requests.post(STATUS_URL, headers=headers, json=payload, timeout=30)
+        response = requests.get(url, headers=headers, timeout=30)
         result = response.json()
 
         if result.get('status') != 200:
@@ -85,23 +62,7 @@ def check_status(job_id: str) -> str:
             return 'error'
 
         data = result.get('data', {})
-        models = data.get('projectGenerationModel', [])
-        if not models:
-            print('status:pending')
-            return 'pending'
-
-        model = models[0]
-        medias = model.get('projectMedias', [])
-        if medias:
-            print('status:completed')
-            print(f'image_count:{len(medias)}')
-            for i, media in enumerate(medias, 1):
-                url = media.get('url')
-                if url:
-                    print(f'image{i}:{url}')
-            return 'completed'
-
-        raw_status = model.get('status') or model.get('generationStatus') or ''
+        raw_status = data.get('status') or ''
         status = normalize_status(str(raw_status))
         print(f'status:{status}')
         return status

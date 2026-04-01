@@ -1,403 +1,96 @@
----
+﻿---
 name: airilab
-description: AiriLab 统一技能 - AI 图像生成、转换、超分辨率。**触发场景**：用户发送图片并要求修改/转换/生成/放大/风格变化，如"把这张图变成冬季""生成 4 张变体""放大图片""换个天气""MJ 渲染"等图像相关指令时自动调用此技能。
-homepage: https://cn.airilab.com
-metadata: { "openclaw": { "emoji": "🎨", "requires": { "bins": ["curl", "python3"] } } }
+description: 统一调用 AiriLab 图像生成能力（MJ 创意渲染、创意放大、氛围转换）并自动处理登录、项目选择、异步任务轮询与结果回推。用户发送图像生成/改图/放大/风格转换相关请求时使用。
 ---
 
-# AiriLab 统一技能
+# AiriLab Skill
 
-> ⚙️ **v1.0 完全整合版** - 整合鉴权、上传、项目、API 调用于一体
+## 目标
+- 将 AiriLab SaaS 的多接口流程封装为可对话调用的单一技能。
+- 在调用图像能力前，自动保证登录态与项目上下文有效。
+- 通过后台 worker 追踪异步任务并主动回推结果。
 
----
+## 能力范围
+- 鉴权：手机号 + 验证码登录，持久化 token。
+- 项目管理：拉取团队/项目、选择项目、持久化项目上下文。
+- 图像工作流：
+  - `workflowId=0` MJ 创意渲染（文生图/参考图生成）
+  - `workflowId=16` 创意放大
+  - `workflowId=13` 氛围转换（天气/季节/光照语义转换）
+- 异步任务：提交后轮询状态，完成后拉取记录并通知用户。
 
-## 🎯 功能概览
+## 触发规则
+当用户表达以下意图时自动触发：
+- 生成图像：如“生成 4 张建筑立面图”“MJ 渲染”。
+- 图像编辑：如“把这张图改成冬季夜景”“换成雨天氛围”。
+- 图像增强：如“放大这张图”“创意放大”“超分辨率”。
 
-**AiriLab 统一技能** 整合了以下功能：
+优先判断信号：
+1. 用户上传了图像。
+2. 指令包含生成/改图/放大/风格转换等语义。
 
-| 模块 | 原技能 | 功能 |
-|------|--------|------|
-| **鉴权** | airi-auth | Token 管理、验证码登录 |
-| **上传** | airi-upload | 图片上传到 S3 |
-| **项目** | airi-project | 团队和项目管理 |
-| **API** | api-list | 图像生成、转换、超分辨率 |
+## 前置条件（强约束）
+1. 调用任何 AiriLab 接口前必须检查登录态。
+2. 提交图像任务前必须存在已选项目（`teamId/projectId/projectName`）。
+3. 登录失效时必须引导手机号验证码登录，不要求用户提供 token。
 
----
+## 工作流参数约束
 
-## 🚀 快速开始
+### 1) MJ 创意渲染（`workflowId=0`）
+- 必填：`prompt`
+- 可选：`referenceImage`（最多 3 张）、`imageCount`（1-4）
 
-### 触发场景
+### 2) 创意放大（`workflowId=16`）
+- 必填：`baseImage`
+- 可选：`width`、`height`
 
-当用户发送以下类型的消息时，**自动调用此技能**：
+### 3) 氛围转换（`workflowId=13`）
+- 必填：`baseImage`
+- 可选：`prompt`、`referenceImage`（最多 1 张）、`imageCount`
 
-| 用户指令示例 | 触发的工作流 |
-|-------------|-------------|
-| "把这张图片转为冬季夜晚" | 氛围转换 (13) |
-| "生成 4 张变体" / "MJ 渲染" | MJ 创意渲染 (4) |
-| "放大这张图" / "超分辨率" | 创意超分辨率 (16) |
-| "换个天气" / "改成雨天" | 氛围转换 (13) |
-| "基于这张图生成类似的" | MJ 创意渲染 (4) |
-| "高清放大" / "upscale" | 创意超分辨率 (16) |
-| [发送图片] + "帮我处理一下" | 根据上下文判断 |
+## 异步任务处理（强约束）
+轮询任务状态与查询生成记录必须分离：
+- 轮询状态接口：`GET /api/Universal/Job/{jobId}`
+  - 状态字段来源：`data.status`
+- 记录查询接口：`POST /api/CrudRouters/getOneRecord`
+  - 仅在状态为 `completed` 后调用
 
-**关键识别点**：
-- ✅ 用户发送了图片
-- ✅ 指令中包含：转换/生成/放大/变体/风格/天气/季节/MJ/超分 等关键词
-- ✅ 表达了图像修改的意图
+脚本职责：
+- `scripts/check_status.py`：只做状态轮询，输出 `status:<value>`。
+- `scripts/fetch.py`：只做记录查询，返回生成 URL 列表等结果。
+- `scheduler/worker.py`：负责任务生命周期与通知。
 
-### 首次使用流程
+## 本地持久化
+- `config/.env`：token 与登录相关信息。
+- `config/project_config.json`：当前项目上下文。
+- `scheduler/jobs.db`：异步任务状态。
+- `scheduler/worker.log`：worker 运行日志。
 
-```
-1. 用户：把这张图片转为冬季夜晚
-   ↓
-2. Bot: 检测到需要登录，请提供手机号
-   ↓
-3. 用户：13828760860
-   ↓
-4. Bot: 验证码已发送，请回复 6 位验证码
-   ↓
-5. 用户：961057
-   ↓
-6. Bot: ✅ 登录成功！正在处理...
-   ↓
-7. Bot: ✅ 图片已上传！请选择项目：
-        【项目 1】My Project 1
-        【项目 2】new project
-        ...
-   ↓
-8. 用户：用 1
-   ↓
-9. Bot: ✅ 任务已提交！Job ID: xxx
-        完成后将自动推送结果
-   ↓
-10. [后台轮询]
-    ↓
-11. Bot: ✅ 图片生成完成！
-        ![图片 1](url)
-        ![图片 2](url)
-        ...
-```
-
----
-
-## 🛠️ 支持的工作流
-
-| 工作流 | workflowId | 必填参数 | 可选参数 | 说明 |
-|--------|-----------|---------|---------|------|
-| **MJ 创意渲染** | `4` | `prompt` | `referenceImage` (≤3 张) | MidJourney 驱动 |
-| **创意超分辨率** | `16` | `baseImage` | 无 | AI 增强放大 |
-| **氛围转换** | `13` | `baseImage` | `prompt`, `referenceImage` (≤1 张) | 天气/季节转换 |
-
----
-
-## ⚠️ Payload 强约束定义
-
-### 1️⃣ MJ 创意渲染 (workflowId: 4)
-
-**必填参数：**
-- `prompt` (string): 提示词描述
-
-**可选参数：**
-- `referenceImage` (array): 参考图数组，**最多 3 张**
-- `imageCount` (number): 生成图片数量 (1-4)
-
-**示例：**
-```json
-{
-  "workflowId": 4,
-  "prompt": "modern building, glass facade, sunset",
-  "referenceImage": [
-    {"url": "https://.../ref1.jpg", "type": 0},
-    {"url": "https://.../ref2.jpg", "type": 0}
-  ],
-  "imageCount": 4,
-  "language": "chs",
-  "teamId": 0,
-  "projectId": 130538,
-  "projectName": "lowcode"
-}
-```
-
----
-
-### 2️⃣ 创意超分辨率 (workflowId: 16)
-
-**必填参数：**
-- `baseImage` (string): 待放大的图片 URL
-
-**可选参数：**
-- `width` (number): 目标宽度 (默认 1288)
-- `height` (number): 目标高度 (默认 816)
-
-**示例：**
-```json
-{
-  "workflowId": 16,
-  "baseImage": "https://.../original.jpg",
-  "width": 1288,
-  "height": 816,
-  "language": "chs",
-  "teamId": 0,
-  "projectId": 130538,
-  "projectName": "lowcode"
-}
-```
-
----
-
-### 3️⃣ 氛围转换 (workflowId: 13)
-
-**必填参数：**
-- `baseImage` (string): 基图 URL
-
-**可选参数：**
-- `prompt` (string): 氛围描述
-- `referenceImage` (array): 参考图数组，**最多 1 张**
-- `imageCount` (number): 生成图片数量
-
-**示例：**
-```json
-{
-  "workflowId": 13,
-  "baseImage": "https://.../base.jpg",
-  "prompt": "winter night, snow covered, evening",
-  "referenceImage": [
-    {"url": "https://.../ref.jpg", "type": 0}
-  ],
-  "imageCount": 4,
-  "language": "chs",
-  "teamId": 0,
-  "projectId": 130538,
-  "projectName": "lowcode"
-}
-```
-
----
-
-## 📁 配置管理
-
-### 配置文件位置
-
-| 配置 | 文件 | 说明 |
-|------|------|------|
-| **Token** | `~/.openclaw/skills/airilab/config/.env` | JWT Token |
-| **项目** | `~/.openclaw/skills/airilab/config/project_config.json` | teamId, projectId, projectName |
-
-### 配置命令
-
+## 运行命令
 ```bash
+# 安装依赖
+python -m pip install -r ~/.openclaw/skills/airilab/requirements.txt
+
 # 查看配置状态
-python3 ~/.openclaw/skills/airilab/core/config.py status
+python ~/.openclaw/skills/airilab/core/config.py status
 
-# 清除 Token
-python3 ~/.openclaw/skills/airilab/core/config.py clear-token
-
-# 清除项目配置
-python3 ~/.openclaw/skills/airilab/core/config.py clear-project
-
-# 清除所有配置
-python3 ~/.openclaw/skills/airilab/core/config.py clear-all
-```
-
----
-
-## 🔐 登录流程
-
-### 自动登录
-
-当 Token 不存在或失效时，系统会自动提示登录：
-
-```
-Bot: 检测到需要登录，请提供手机号
-用户：13828760860
-Bot: 验证码已发送，请回复 6 位验证码
-用户：961057
-Bot: ✅ 登录成功！
-```
-
-### 手动登录
-
-```bash
-# 发送验证码
-python3 ~/.openclaw/skills/airilab/core/auth.py login --phone 13828760860
-
-# 验证验证码
-python3 ~/.openclaw/skills/airilab/core/auth.py login --phone 13828760860 --code 961057
-
-# 退出登录
-python3 ~/.openclaw/skills/airilab/core/auth.py logout
-```
-
----
-
-## 📊 项目管理
-
-### 选择项目
-
-首次使用时需要选择项目：
-
-```
-Bot: 请选择项目：
-     【项目 1】My Project 1 (projectId: 170923)
-     【项目 2】new project (projectId: 190175)
-用户：用 1
-Bot: ✅ 已选择：My Project 1
-```
-
-### 项目命令
-
-```bash
-# 列出所有项目
-python3 ~/.openclaw/skills/airilab/core/project.py list
-
-# 选择项目
-python3 ~/.openclaw/skills/airilab/core/project.py select --selection "用 170923"
-
-# 查看当前项目
-python3 ~/.openclaw/skills/airilab/core/project.py show
-
-# 清除项目配置
-python3 ~/.openclaw/skills/airilab/core/project.py clear
-```
-
----
-
-## 🔄 后台调度器
-
-### 启动调度器
-
-```bash
-# 前台运行（测试）
-python3 ~/.openclaw/skills/airilab/scheduler/worker.py
-
-# 后台运行
-nohup python3 ~/.openclaw/skills/airilab/scheduler/worker.py > worker.log 2>&1 &
-
-# systemd 服务（推荐）
-sudo systemctl start airilab-worker
-```
-
-### 调度器功能
-
-- 每 15 秒轮询 pending 任务
-- 超时限制：15 分钟（超过视为失败）
-- 完成后自动获取结果
-- 失败时主动通知用户
-- 任务状态持久化到 SQLite
-
----
-
-## 📋 使用示例
-
-### 示例 1：MJ 创意渲染
-
-```
-用户：生成一张现代高层办公楼的效果图
-Bot: ✅ 任务已提交！Job ID: xxx
-     完成后将自动推送结果
-[后台轮询]
-Bot: ✅ 图片生成完成！
-     ![图片 1](url)
-     ![图片 2](url)
-     ...
-```
-
-### 示例 2：氛围转换
-
-```
-用户：把这张图片转为冬季夜晚 [图片]
-Bot: ✅ 图片已上传！
-     ✅ 任务已提交！Job ID: xxx
-[后台轮询]
-Bot: ✅ 图片生成完成！
-     ![图片 1](url)
-     ...
-```
-
-### 示例 3：超分辨率放大
-
-```
-用户：放大这张图片 [图片]
-Bot: ✅ 图片已上传！
-     ✅ 任务已提交！Job ID: xxx
-[后台轮询]
-Bot: ✅ 图片放大完成！
-     ![图片](url)
-```
-
----
-
-## ⚠️ 禁止使用的字段
-
-以下字段在所有工作流中都是**无效**的：
-
-- ❌ `toolsetEntry`
-- ❌ `toolsetLv2`
-- ❌ `toolsetLv3`
-- ❌ `*-container` (如 `prompt-container`, `styleReference-container`)
-- ❌ 其他未在约束定义中列出的字段
-
----
-
-## 📄 相关文件
-
-| 文件 | 说明 |
-|------|------|
-| `core/config.py` | 统一配置管理 |
-| `core/auth.py` | 鉴权管理 |
-| `core/project.py` | 项目管理 |
-| `core/upload.py` | 图片上传 |
-| `core/api.py` | API 调用 |
-| `workflows/` | 工作流定义 |
-| `scheduler/worker.py` | 后台调度器 |
-| `scripts/post-install.sh` | 安装后自动配置脚本 |
-| `scripts/start-worker.sh` | 后台服务启动脚本 |
-
----
-
-## 🔧 安装后自动启动
-
-**AiriLab Skill 安装后会自动执行以下操作**:
-
-1. ✅ 检查登录状态（Token 配置）
-2. ✅ 检查项目配置
-3. ✅ 自动启动后台调度器（worker）
-
-**手动执行安装后配置**:
-```bash
-~/.openclaw/skills/airilab/scripts/post-install.sh
-```
-
-**后台服务管理**:
-```bash
-# 启动服务
+# 启动后台 worker
 ~/.openclaw/skills/airilab/scripts/start-worker.sh
-
-# 查看状态
-ps aux | grep worker.py
-
-# 查看日志
-tail -f ~/.openclaw/skills/airilab/scheduler/worker.log
-
-# 停止服务
-kill $(cat ~/.openclaw/skills/airilab/scheduler/worker.pid)
 ```
 
-**开机自启** (可选):
-```bash
-# 添加到 crontab
-(crontab -l 2>/dev/null; echo "@reboot ~/.openclaw/skills/airilab/scripts/start-worker.sh") | crontab -
-```
+## 故障处理
+- `missing_token`：引导用户登录。
+- `missing_project`：引导用户选择项目。
+- `timeout` / 轮询超时：任务标记失败并通知用户重试。
+- 记录查询 `success=false`：按失败处理，不得误判成功。
 
----
-
-## 版本历史
-
-| 版本 | 日期 | 更新内容 |
-|------|------|----------|
-| 1.0 | 2026-03-31 | 初始整合版本（整合 airi-auth, airi-upload, airi-project, api-list） |
-
----
-
-_整合完成时间：2026-03-31_
-_整合者：克斯托斯 -9 数据贤者_
+## 相关文件
+- `core/config.py`
+- `core/auth.py`
+- `core/project.py`
+- `core/upload.py`
+- `core/api.py`
+- `scripts/check_status.py`
+- `scripts/fetch.py`
+- `scheduler/worker.py`
+- `SPEC.md`
