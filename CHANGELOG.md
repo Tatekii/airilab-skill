@@ -1,5 +1,20 @@
 ﻿# AiriLab Skill 更新日志
 
+## [1.4.0] 2026-04-01 - Post-install Bootstrap and Legacy Cleanup
+
+### Added
+- Added a new `scripts/post-install.sh` bootstrap script to initialize runtime directories, install dependencies, run health checks, configure autostart, and ensure worker startup.
+- Added `post-install.sh` command to SKILL runtime commands.
+
+### Changed
+- Refined `.gitignore` to ignore local config/runtime artifacts (`config/`, `scheduler/`, `*.db`, `*.log`, `*.pid`).
+
+### Removed
+- Removed obsolete scripts: `scripts/install-systemd-service.sh` and legacy `scripts/post-install.sh` implementation.
+- Removed outdated setup documents tied to legacy flow: `AUTOSTART_SETUP.md` and `P1_FIXES.md`.
+
+### Notes
+- New post-install flow prioritizes user-level systemd autostart and falls back to cron `@reboot` when systemd user services are unavailable.
 ## [1.3.0] 2026-04-01 - Runtime Hardening and Login OTP Rules
 
 ### Changed
@@ -117,4 +132,5 @@ _鍏?4 寮犲浘鐗嘷
 ## [1.0.0] 2026-03-31 - 鍒濆鏁村悎鐗堟湰
 
 鏁村悎 airi-auth, airi-upload, airi-project, api-list 鍥涗釜鎶€鑳姐€?
+
 
