@@ -105,6 +105,7 @@ contentFR: "Changez rapidement entre la météo et les saisons\nScénarios appli
 - `scripts/check_status.py`：只做状态轮询，输出 `status:<value>`。
 - `scripts/fetch.py`：只做记录查询，返回生成 URL 列表等结果。
 - `scheduler/worker.py`：负责任务生命周期与通知。
+- 任务提交成功后必须立即结束本轮对话，并明确告知用户“后台完成后会自动通知”。
 
 ## 本地持久化
 - 运行根目录：优先使用环境变量 `AIRILAB_HOME`，未设置时默认 `~/.openclaw/skills/airilab`。

@@ -1,6 +1,12 @@
 ﻿# AiriLab Skill 更新日志
 
 
+## [1.4.2] 2026-04-01 - Async Submit Response Rule
+
+### Changed
+- Updated submit-success response message in `core/api.py`: after job submission, explicitly tells user this round ends and result will be notified asynchronously by background worker.
+- Updated `SKILL.md` async-task constraint: on successful submit, the agent must end current round and state that background completion notification will follow.
+
 ## [1.4.1] 2026-04-01 - Polling Terminal-State Rule Update
 
 ### Changed

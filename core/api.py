@@ -311,7 +311,7 @@ class AiriLabAPI:
                 return {
                     'success': True,
                     'job_id': job_id,
-                    'message': f'任务已提交：{job_id}',
+                    'message': f'Job submitted: {job_id}. This round is complete. You will be notified when background processing finishes.',
                     'needs_auth': False,
                     'needs_project': False
                 }
