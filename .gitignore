@@ -1,20 +1,17 @@
-# Python
+﻿# Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 
-# 配置文件（敏感）
-config/.env
-config/project_config.json
+# Local config and secrets
+config/
 
-# 运行时文件
-scheduler/jobs.db
-scheduler/worker.pid
-scheduler/worker.log
-scheduler/notifications.log
-
-# 临时文件
+# Runtime artifacts
+scheduler/
 *.log
 *.pid
 *.db
+
+# OS/editor
+.DS_Store

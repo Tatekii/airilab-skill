@@ -128,6 +128,9 @@ python ~/.openclaw/skills/airilab/core/config.py health
 # 一键健康检查（状态 + worker + 最近日志）
 ~/.openclaw/skills/airilab/scripts/health.sh
 
+# 安装后初始化（依赖 + worker + 自启动）
+~/.openclaw/skills/airilab/scripts/post-install.sh
+
 # 启动后台 worker
 ~/.openclaw/skills/airilab/scripts/start-worker.sh
 ```

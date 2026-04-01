@@ -1,84 +1,141 @@
 #!/bin/bash
-# AiriLab Skill 安装后自动执行脚本
-# 功能：配置 + 启动后台服务
-
-set -e
+# Post-install bootstrap for AiriLab skill runtime.
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_DIR="$(dirname "$SCRIPT_DIR")"
 
-echo ""
-echo "╔═══════════════════════════════════════════════════╗"
-echo "║     🎨 AiriLab Skill 安装后配置                   ║"
-echo "╚═══════════════════════════════════════════════════╝"
-echo ""
+if [ -z "${AIRILAB_HOME:-}" ]; then
+  export AIRILAB_HOME="$HOME/.openclaw/skills/airilab"
+fi
 
-# Step 1: 检查 Token
-echo "📝 Step 1/3: 检查登录状态..."
-TOKEN_FILE="$SKILL_DIR/config/.env"
+PYTHON_BIN="${PYTHON_BIN:-}"
+if [ -z "$PYTHON_BIN" ]; then
+  if command -v python3 >/dev/null 2>&1; then
+    PYTHON_BIN="$(command -v python3)"
+  elif command -v python >/dev/null 2>&1; then
+    PYTHON_BIN="$(command -v python)"
+  else
+    echo "ERROR: python3/python not found in PATH"
+    exit 1
+  fi
+fi
 
-if [ ! -f "$TOKEN_FILE" ]; then
-    echo "⚠️  检测到未登录状态"
-    echo ""
-    echo "💡 请使用以下方式之一登录："
-    echo ""
-    echo "   方式 1 - 命令行登录:"
-    echo "   python3 $SKILL_DIR/core/auth.py login --phone <手机号>"
-    echo ""
-    echo "   方式 2 - 对话登录:"
-    echo "   在聊天中发送任意图像修改指令，Bot 会自动引导登录"
-    echo ""
+INSTALL_DEPS=1
+CONFIGURE_AUTOSTART=1
+
+for arg in "$@"; do
+  case "$arg" in
+    --no-deps)
+      INSTALL_DEPS=0
+      ;;
+    --no-autostart)
+      CONFIGURE_AUTOSTART=0
+      ;;
+    *)
+      echo "WARN: unknown option: $arg"
+      ;;
+  esac
+done
+
+mkdir -p "$AIRILAB_HOME/config" "$AIRILAB_HOME/scheduler"
+
+echo "AiriLab post-install"
+echo "skill_dir: $SKILL_DIR"
+echo "airilab_home: $AIRILAB_HOME"
+echo "python: $PYTHON_BIN"
+echo
+
+if [ "$INSTALL_DEPS" -eq 1 ]; then
+  if [ -f "$SKILL_DIR/requirements.txt" ]; then
+    echo "[1/4] Installing dependencies..."
+    "$PYTHON_BIN" -m pip install -r "$SKILL_DIR/requirements.txt"
+  else
+    echo "[1/4] Skip dependency install: requirements.txt not found"
+  fi
 else
-    echo "✅ Token 已配置"
-    PHONE=$(grep AIRILAB_PHONE "$TOKEN_FILE" 2>/dev/null | cut -d= -f2)
-    if [ -n "$PHONE" ]; then
-        echo "   手机号：$PHONE"
+  echo "[1/4] Skip dependency install (--no-deps)"
+fi
+
+echo "[2/4] Runtime health check..."
+"$PYTHON_BIN" "$SKILL_DIR/core/config.py" health || true
+
+setup_systemd_user() {
+  local service_dir service_file
+  service_dir="$HOME/.config/systemd/user"
+  service_file="$service_dir/airilab-worker.service"
+
+  mkdir -p "$service_dir"
+  cat > "$service_file" <<EOF
+[Unit]
+Description=AiriLab Worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=AIRILAB_HOME=$AIRILAB_HOME
+WorkingDirectory=$SKILL_DIR
+ExecStart=$PYTHON_BIN $SKILL_DIR/scheduler/worker.py
+Restart=always
+RestartSec=5
+StandardOutput=append:$AIRILAB_HOME/scheduler/worker.log
+StandardError=append:$AIRILAB_HOME/scheduler/worker.log
+
+[Install]
+WantedBy=default.target
+EOF
+
+  systemctl --user daemon-reload
+  systemctl --user enable --now airilab-worker.service
+}
+
+setup_cron_reboot() {
+  local cron_line existing
+  cron_line="@reboot AIRILAB_HOME=\"$AIRILAB_HOME\" \"$SKILL_DIR/scripts/start-worker.sh\" >> \"$AIRILAB_HOME/scheduler/autostart.log\" 2>&1"
+  existing="$(crontab -l 2>/dev/null | grep -F "$SKILL_DIR/scripts/start-worker.sh" || true)"
+  if [ -z "$existing" ]; then
+    (crontab -l 2>/dev/null; echo "$cron_line") | crontab -
+  fi
+}
+
+if [ "$CONFIGURE_AUTOSTART" -eq 1 ]; then
+  echo "[3/4] Configuring autostart..."
+  if command -v systemctl >/dev/null 2>&1 && systemctl --user --version >/dev/null 2>&1; then
+    if setup_systemd_user; then
+      echo "Autostart: systemd user service enabled (airilab-worker.service)"
+      START_MODE="systemd"
+    else
+      echo "WARN: systemd user setup failed, fallback to cron/start-worker."
+      START_MODE="fallback"
     fi
-fi
-
-echo ""
-
-# Step 2: 检查项目配置
-echo "📁 Step 2/3: 检查项目配置..."
-PROJECT_FILE="$SKILL_DIR/config/project_config.json"
-
-if [ ! -f "$PROJECT_FILE" ]; then
-    echo "⚠️  未配置项目"
-    echo "💡 首次使用图像功能时会自动引导选择项目"
+  elif command -v crontab >/dev/null 2>&1; then
+    if setup_cron_reboot; then
+      echo "Autostart: cron @reboot configured"
+    else
+      echo "WARN: cron autostart setup failed"
+    fi
+    START_MODE="cron"
+  else
+    echo "WARN: no systemd/crontab found, autostart not configured"
+    START_MODE="none"
+  fi
 else
-    echo "✅ 项目已配置"
-    PROJECT_NAME=$(python3 -c "import json; print(json.load(open('$PROJECT_FILE')).get('projectName', 'Unknown'))" 2>/dev/null || echo "Unknown")
-    echo "   项目：$PROJECT_NAME"
+  echo "[3/4] Skip autostart setup (--no-autostart)"
+  START_MODE="none"
 fi
 
-echo ""
+echo "[4/4] Ensuring worker process is running..."
+if [ "${START_MODE:-none}" = "systemd" ]; then
+  systemctl --user status airilab-worker.service --no-pager || true
+else
+  "$SKILL_DIR/scripts/start-worker.sh"
+fi
 
-# Step 3: 启动后台服务
-echo "🚀 Step 3/3: 启动后台服务..."
-echo ""
+echo
+echo "Post-install complete."
+echo "Next checks:"
+echo "  $PYTHON_BIN $SKILL_DIR/core/config.py status"
+echo "  $PYTHON_BIN $SKILL_DIR/core/config.py health"
+echo "  $SKILL_DIR/scripts/health.sh"
 
-# 执行启动脚本
-chmod +x "$SCRIPT_DIR/start-worker.sh"
-"$SCRIPT_DIR/start-worker.sh"
-
-echo ""
-echo "╔═══════════════════════════════════════════════════╗"
-echo "║           ✅ AiriLab Skill 配置完成！             ║"
-echo "╚═══════════════════════════════════════════════════╝"
-echo ""
-echo "📚 使用指南:"
-echo ""
-echo "   1. 发送图像 + 修改指令，例如："
-echo "      [发送图片] + '把这张图转为冬季夜晚'"
-echo ""
-echo "   2. 查看任务状态:"
-echo "      python3 $SKILL_DIR/scripts/check_status.py --job-id <job_id>"
-echo ""
-echo "   3. 查看后台日志:"
-echo "      tail -f $SKILL_DIR/scheduler/worker.log"
-echo ""
-echo "   4. 停止后台服务:"
-echo "      kill \$(cat $SKILL_DIR/scheduler/worker.pid)"
-echo ""
-echo "💡 提示：后台服务会在下次登录时自动重启"
-echo ""
