@@ -181,3 +181,10 @@ python ~/.openclaw/skills/airilab/core/config.py health
 - 调用 AiriLab 图像工作流时，必须通过 core/api.py 的 _build_payload(...) 构建请求体。
 - 禁止在 agent 对话执行层、临时脚本、或其他模块中手工拼装 payload。
 - 如需新增字段，必须先修改 _build_payload(...)，再由 submit_task(...) 发起请求。
+
+## Async Round-Exit Rule (Release Blocking)
+- On successful submit (success=true with non-empty job_id), the agent MUST end the current round immediately.
+- In the same round after submit success, the agent MUST NOT poll job status and MUST NOT call result fetch.
+- User-facing response must explicitly state that background completion will be notified asynchronously.
+- Any implementation that keeps waiting/polling in the same round is a release-blocking defect.
+

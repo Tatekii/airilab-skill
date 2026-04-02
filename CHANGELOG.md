@@ -1,5 +1,15 @@
 ﻿# AiriLab Skill 更新日志
 
+## [1.4.7] 2026-04-02 - Enforce Async Round Exit After Submit
+
+### Changed
+- Added machine-readable submit response flags in core/api.py: ound_complete and 
+otify_async.
+- Submit success now explicitly signals immediate round termination for agent orchestration.
+
+### Added
+- Added release-blocking "same-round no-poll" rule to SKILL.md.
+- Added corresponding architecture rule to SPEC.md.
 ## [1.4.6] 2026-04-02 - Enforce _build_payload-Only Workflow Calls
 
 ### Fixed
@@ -187,6 +197,7 @@ _鍏?4 寮犲浘鐗嘷
 ## [1.0.0] 2026-03-31 - 鍒濆鏁村悎鐗堟湰
 
 鏁村悎 airi-auth, airi-upload, airi-project, api-list 鍥涗釜鎶€鑳姐€?
+
 
 
 

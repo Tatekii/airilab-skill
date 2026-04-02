@@ -1,11 +1,11 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
-AiriLab API 调用
+AiriLab API 璋冪敤
 
-整合原 api-list 技能的核心功能：
-1. 提交任务（MJ 渲染、创意放大、氛围转换）
-2. 自动处理认证和项目配置
-3. 统一的错误处理
+鏁村悎鍘?api-list 鎶€鑳界殑鏍稿績鍔熻兘锛?
+1. 鎻愪氦浠诲姟锛圡J 娓叉煋銆佸垱鎰忔斁澶с€佹皼鍥磋浆鎹級
+2. 鑷姩澶勭悊璁よ瘉鍜岄」鐩厤缃?
+3. 缁熶竴鐨勯敊璇鐞?
 """
 
 import requests
@@ -31,13 +31,13 @@ except ImportError:  # pragma: no cover
         init_job_store = None
         save_job_record = None
 
-# API 端点
+# API 绔偣
 GENERATE_URL = "https://cn.airilab.com/api/Universal/Generate"
 WORKFLOW_MJ = 0
 WORKFLOW_UPSCALE = 16
 WORKFLOW_ATMOSPHERE = 13
 
-# 请求头模板
+# 璇锋眰澶存ā鏉?
 DEFAULT_HEADERS = {
     "accept": "text/plain",
     "accept-language": "zh-CN,zh;q=0.9,en;q=0.8",
@@ -48,14 +48,14 @@ DEFAULT_HEADERS = {
 
 
 class AiriLabAPI:
-    """AiriLab API 调用器"""
+    """AiriLab API client."""
     
     def __init__(self, config: AiriLabConfig = None):
         """
-        初始化 API 调用器
+        鍒濆鍖?API 璋冪敤鍣?
         
-        参数:
-            config: 配置管理器实例
+        鍙傛暟:
+            config: 閰嶇疆绠＄悊鍣ㄥ疄渚?
         """
         self.config = config or AiriLabConfig()
         self.auth = AiriLabAuth(self.config)
@@ -63,9 +63,9 @@ class AiriLabAPI:
     
     def _ensure_ready(self) -> Dict[str, Any]:
         """
-        确保已准备好（认证 + 项目配置）
+        纭繚宸插噯澶囧ソ锛堣璇?+ 椤圭洰閰嶇疆锛?
         
-        返回:
+        杩斿洖:
             dict: {
                 'ready': bool,
                 'needs_auth': bool,
@@ -75,7 +75,7 @@ class AiriLabAPI:
                 'message': str
             }
         """
-        # 检查认证
+        # 妫€鏌ヨ璇?
         auth_result = self.auth.ensure_authenticated()
         
         if not auth_result['authenticated']:
@@ -88,7 +88,7 @@ class AiriLabAPI:
                 'message': auth_result['message']
             }
         
-        # 检查项目配置
+        # 妫€鏌ラ」鐩厤缃?
         project = self.config.get_project()
         
         if not project:
@@ -98,7 +98,7 @@ class AiriLabAPI:
                 'needs_project': True,
                 'token': auth_result['token'],
                 'project': None,
-                'message': '需要选择项目'
+                'message': '闇€瑕侀€夋嫨椤圭洰'
             }
         
         return {
@@ -107,7 +107,7 @@ class AiriLabAPI:
             'needs_project': False,
             'token': auth_result['token'],
             'project': project,
-            'message': '就绪'
+            'message': '灏辩华'
         }
     
     def _build_payload(self, workflow_id: int, project: Dict[str, Any], 
@@ -115,21 +115,21 @@ class AiriLabAPI:
                        reference_images: List[str] = None, image_count: int = 4,
                        **kwargs) -> Dict[str, Any]:
         """
-        构建请求 payload
+        鏋勫缓璇锋眰 payload
         
-        参数:
-            workflow_id: 工作流 ID
-            project: 项目配置
-            base_image: 基图 URL（可选）
-            prompt: 提示词（可选）
-            reference_images: 参考图 URL 列表（可选）
-            image_count: 生成图片数量
-            **kwargs: 其他参数
+        鍙傛暟:
+            workflow_id: 宸ヤ綔娴?ID
+            project: 椤圭洰閰嶇疆
+            base_image: 鍩哄浘 URL锛堝彲閫夛級
+            prompt: 鎻愮ず璇嶏紙鍙€夛級
+            reference_images: 鍙傝€冨浘 URL 鍒楄〃锛堝彲閫夛級
+            image_count: 鐢熸垚鍥剧墖鏁伴噺
+            **kwargs: 鍏朵粬鍙傛暟
         
-        返回:
-            dict: 请求 payload
+        杩斿洖:
+            dict: 璇锋眰 payload
         """
-        # MJ 创意渲染工作流 (workflowId: 0)
+        # MJ 鍒涙剰娓叉煋宸ヤ綔娴?(workflowId: 0)
         if workflow_id == WORKFLOW_MJ:
             payload = {
                 "model": 0,
@@ -180,7 +180,7 @@ class AiriLabAPI:
                 "projectName": project['projectName']
             }
         
-        # 创意放大工作流 (workflowId: 16)
+        # 鍒涙剰鏀惧ぇ宸ヤ綔娴?(workflowId: 16)
         elif workflow_id == WORKFLOW_UPSCALE:
             payload = {
                 "initialCNImage": None,
@@ -225,7 +225,7 @@ class AiriLabAPI:
                 "projectName": project['projectName']
             }
         
-        # 氛围转换工作流 (workflowId: 13)
+        # 姘涘洿杞崲宸ヤ綔娴?(workflowId: 13)
         elif workflow_id == WORKFLOW_ATMOSPHERE:
             payload = {
                 "workflowId": WORKFLOW_ATMOSPHERE,
@@ -273,7 +273,7 @@ class AiriLabAPI:
             }
         
         else:
-            # 默认简化的 payload
+            # 榛樿绠€鍖栫殑 payload
             payload = {
                 "workflowId": workflow_id,
                 "imageCount": image_count,
@@ -294,13 +294,13 @@ class AiriLabAPI:
     
     def submit_task(self, workflow_id: int, **kwargs) -> Dict[str, Any]:
         """
-        提交生成任务
+        鎻愪氦鐢熸垚浠诲姟
         
-        参数:
-            workflow_id: 工作流 ID (0=MJ, 16=创意放大，13=氛围转换)
-            **kwargs: 工作流特定参数
+        鍙傛暟:
+            workflow_id: 宸ヤ綔娴?ID (0=MJ, 16=鍒涙剰鏀惧ぇ锛?3=姘涘洿杞崲)
+            **kwargs: 宸ヤ綔娴佺壒瀹氬弬鏁?
         
-        返回:
+        杩斿洖:
             dict: {
                 'success': bool,
                 'job_id': str | None,
@@ -309,17 +309,19 @@ class AiriLabAPI:
                 'needs_project': bool
             }
         """
-        # 强约束：调用方不得直接传 payload，必须经由 _build_payload 统一构建。
+        # Strong rule: callers must not pass payload directly.
         if 'payload' in kwargs:
             return {
                 'success': False,
                 'job_id': None,
                 'message': 'Invalid call: direct payload override is not allowed. Use _build_payload only.',
                 'needs_auth': False,
-                'needs_project': False
+                'needs_project': False,
+                'round_complete': False,
+                'notify_async': False
             }
 
-        # 确保已准备好
+        # 纭繚宸插噯澶囧ソ
         ready = self._ensure_ready()
         
         if not ready['ready']:
@@ -328,17 +330,19 @@ class AiriLabAPI:
                 'job_id': None,
                 'message': ready['message'],
                 'needs_auth': ready['needs_auth'],
-                'needs_project': ready['needs_project']
+                'needs_project': ready['needs_project'],
+                'round_complete': False,
+                'notify_async': False
             }
         
-        # 构建 payload
+        # 鏋勫缓 payload
         payload = self._build_payload(
             workflow_id,
             ready['project'],
             **kwargs
         )
         
-        # 提交任务
+        # 鎻愪氦浠诲姟
         headers = self._build_headers(
             token=ready['token'],
             project_id=ready['project']['projectId']
@@ -397,40 +401,46 @@ class AiriLabAPI:
                     'job_id': job_id,
                     'message': f'Job submitted: {job_id}. This round is complete. You will be notified when background processing finishes.',
                     'needs_auth': False,
-                    'needs_project': False
+                    'needs_project': False,
+                    'round_complete': True,
+                    'notify_async': True
                 }
             else:
                 return {
                     'success': False,
                     'job_id': None,
-                    'message': result.get('message', '提交失败'),
+                    'message': result.get('message', '鎻愪氦澶辫触'),
                     'needs_auth': False,
-                    'needs_project': False
+                    'needs_project': False,
+                    'round_complete': False,
+                    'notify_async': False
                 }
                 
         except requests.exceptions.RequestException as e:
             return {
                 'success': False,
                 'job_id': None,
-                'message': f'网络错误：{str(e)}',
+                'message': f'Network error: {str(e)}',
                 'needs_auth': False,
-                'needs_project': False
+                'needs_project': False,
+                'round_complete': False,
+                'notify_async': False
             }
     
-    # ==================== 快捷方法 ====================
+    # ==================== 蹇嵎鏂规硶 ====================
     
     def mj_render(self, prompt: str, reference_images: List[str] = None, 
                   image_count: int = 4) -> Dict[str, Any]:
         """
-        提交 MJ 创意渲染任务
+        鎻愪氦 MJ 鍒涙剰娓叉煋浠诲姟
         
-        参数:
-            prompt: 提示词
-            reference_images: 参考图 URL 列表（最多 3 张）
-            image_count: 生成图片数量
+        鍙傛暟:
+            prompt: 鎻愮ず璇?
+            reference_images: 鍙傝€冨浘 URL 鍒楄〃锛堟渶澶?3 寮狅級
+            image_count: 鐢熸垚鍥剧墖鏁伴噺
         
-        返回:
-            dict: 提交结果
+        杩斿洖:
+            dict: 鎻愪氦缁撴灉
         """
         return self.submit_task(
             workflow_id=WORKFLOW_MJ,
@@ -442,15 +452,15 @@ class AiriLabAPI:
     def upscale(self, base_image: str, width: int = 1288, 
                 height: int = 816) -> Dict[str, Any]:
         """
-        提交创意放大任务
+        鎻愪氦鍒涙剰鏀惧ぇ浠诲姟
         
-        参数:
-            base_image: 基图 URL
-            width: 目标宽度
-            height: 目标高度
+        鍙傛暟:
+            base_image: 鍩哄浘 URL
+            width: 鐩爣瀹藉害
+            height: 鐩爣楂樺害
         
-        返回:
-            dict: 提交结果
+        杩斿洖:
+            dict: 鎻愪氦缁撴灉
         """
         return self.submit_task(
             workflow_id=WORKFLOW_UPSCALE,
@@ -463,16 +473,16 @@ class AiriLabAPI:
                              reference_image: str = None,
                              image_count: int = 4) -> Dict[str, Any]:
         """
-        提交氛围转换任务
+        鎻愪氦姘涘洿杞崲浠诲姟
         
-        参数:
-            base_image: 基图 URL
-            prompt: 氛围描述
-            reference_image: 参考图 URL（最多 1 张）
-            image_count: 生成图片数量
+        鍙傛暟:
+            base_image: 鍩哄浘 URL
+            prompt: 姘涘洿鎻忚堪
+            reference_image: 鍙傝€冨浘 URL锛堟渶澶?1 寮狅級
+            image_count: 鐢熸垚鍥剧墖鏁伴噺
         
-        返回:
-            dict: 提交结果
+        杩斿洖:
+            dict: 鎻愪氦缁撴灉
         """
         reference_images = [reference_image] if reference_image else None
         
@@ -485,18 +495,18 @@ class AiriLabAPI:
         )
 
 
-# ==================== 命令行入口 ====================
+# ==================== 鍛戒护琛屽叆鍙?====================
 
 if __name__ == "__main__":
     import argparse
     
-    parser = argparse.ArgumentParser(description="AiriLab API 调用")
+    parser = argparse.ArgumentParser(description="AiriLab API 璋冪敤")
     parser.add_argument("--tool", required=True, 
                        choices=["mj", "upscale", "atmosphere"],
-                       help="工具类型")
-    parser.add_argument("--prompt", help="提示词（用于 MJ 和 atmosphere）")
-    parser.add_argument("--base-image", help="基图 URL（用于创意放大和 atmosphere）")
-    parser.add_argument("--image-count", type=int, default=4, help="生成图片数量")
+                       help="宸ュ叿绫诲瀷")
+    parser.add_argument("--prompt", help="Prompt text (for mj and atmosphere)")
+    parser.add_argument("--base-image", help="Base image URL (for upscale and atmosphere)")
+    parser.add_argument("--image-count", type=int, default=4, help="鐢熸垚鍥剧墖鏁伴噺")
     
     args = parser.parse_args()
     
@@ -505,27 +515,27 @@ if __name__ == "__main__":
     
     if args.tool == "mj":
         if not args.prompt:
-            print("❌ 错误：MJ 模式需要 --prompt 参数")
+            print("鉂?閿欒锛歁J 妯″紡闇€瑕?--prompt 鍙傛暟")
         else:
             result = api.mj_render(args.prompt, image_count=args.image_count)
             if result['success']:
-                print(f"✅ {result['message']}")
+                print(f"鉁?{result['message']}")
             else:
-                print(f"❌ {result['message']}")
+                print(f"鉂?{result['message']}")
     
     elif args.tool == "upscale":
         if not args.base_image:
-            print("❌ 错误：创意放大需要 --base-image 参数")
+            print("鉂?閿欒锛氬垱鎰忔斁澶ч渶瑕?--base-image 鍙傛暟")
         else:
             result = api.upscale(args.base_image)
             if result['success']:
-                print(f"✅ {result['message']}")
+                print(f"鉁?{result['message']}")
             else:
-                print(f"❌ {result['message']}")
+                print(f"鉂?{result['message']}")
     
     elif args.tool == "atmosphere":
         if not args.base_image or not args.prompt:
-            print("❌ 错误：atmosphere 需要 --base-image 和 --prompt 参数")
+            print("鉂?閿欒锛歛tmosphere 闇€瑕?--base-image 鍜?--prompt 鍙傛暟")
         else:
             result = api.atmosphere_transform(
                 args.base_image,
@@ -533,6 +543,6 @@ if __name__ == "__main__":
                 image_count=args.image_count
             )
             if result['success']:
-                print(f"✅ {result['message']}")
+                print(f"鉁?{result['message']}")
             else:
-                print(f"❌ {result['message']}")
+                print(f"鉂?{result['message']}")
