@@ -7,7 +7,6 @@ import json
 import logging
 import os
 import re
-import sqlite3
 import subprocess
 import sys
 import time
@@ -18,6 +17,7 @@ AIRILAB_PATH = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(AIRILAB_PATH))
 
 from core.paths import ensure_runtime_dirs, get_scheduler_dir  # noqa: E402
+from core.job_store import append_job_event, get_db_connection, init_db as init_job_store  # noqa: E402
 
 ensure_runtime_dirs()
 
@@ -115,55 +115,8 @@ def startup_self_check() -> None:
 
 
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute(
-        '''
-        CREATE TABLE IF NOT EXISTS jobs (
-            job_id TEXT PRIMARY KEY,
-            user_id TEXT NOT NULL,
-            chat_id TEXT NOT NULL,
-            tool TEXT NOT NULL,
-            status TEXT DEFAULT 'pending',
-            submitted_at TEXT,
-            started_at TEXT,
-            completed_at TEXT,
-            input_params TEXT,
-            output_url TEXT,
-            thumbnail_url TEXT,
-            error_message TEXT,
-            attempts INTEGER DEFAULT 0
-        )
-        '''
-    )
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_status ON jobs(status)')
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_user ON jobs(user_id)')
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_submitted ON jobs(submitted_at)')
-    conn.commit()
-    conn.close()
+    init_job_store()
     logger.info('database initialized')
-
-
-def get_db_connection():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
-def save_job(job_id: str, user_id: str, chat_id: str, tool: str, input_params: dict):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        '''
-        INSERT OR REPLACE INTO jobs
-        (job_id, user_id, chat_id, tool, status, submitted_at, input_params)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''',
-        (job_id, user_id, chat_id, tool, STATUS_PENDING, datetime.now().isoformat(), json.dumps(input_params)),
-    )
-    conn.commit()
-    conn.close()
-    logger.info(f'job saved: {job_id}')
 
 
 def get_pending_jobs():
@@ -329,6 +282,7 @@ def process_job(job):
     if attempts >= MAX_ATTEMPTS:
         detail = f'轮询超时（{TIMEOUT_MINUTES}分钟）'
         update_job_status(job_id, STATUS_FAILED, error_message=detail)
+        append_job_event(job_id, 'timeout', detail, level='error', details={'attempts': attempts})
         notify_user(user_id, chat_id, job_id, STATUS_FAILED, error_message=detail, tool=tool)
         return
 
@@ -339,6 +293,7 @@ def process_job(job):
         if elapsed > TIMEOUT_MINUTES:
             detail = f'任务超时（{elapsed:.1f}分钟）'
             update_job_status(job_id, STATUS_FAILED, error_message=detail)
+            append_job_event(job_id, 'timeout', detail, level='error', details={'elapsed_minutes': round(elapsed, 2)})
             notify_user(user_id, chat_id, job_id, STATUS_FAILED, error_message=detail, tool=tool)
             return
     except Exception as e:
@@ -346,10 +301,17 @@ def process_job(job):
 
     logger.info(f'checking job={job_id} attempt={attempts + 1}/{MAX_ATTEMPTS} elapsed={elapsed:.1f}m')
     status = check_job_status(job_id)
+    append_job_event(
+        job_id,
+        'status_polled',
+        f'Polled status: {status}',
+        details={'attempt': attempts + 1, 'elapsed_minutes': round(elapsed, 2)},
+    )
 
     # 业务规则：只要状态不是 processing，就视为生成流程结束并立即拉取结果。
     if status == STATUS_PROCESSING:
         update_job_status(job_id, STATUS_PROCESSING)
+        append_job_event(job_id, 'in_progress', 'Job still processing')
         return
 
     result = fetch_result(job_id)
@@ -360,6 +322,13 @@ def process_job(job):
         else:
             detail = f'终态={status}, 拉取结果失败: {fetch_detail}'
         update_job_status(job_id, STATUS_FAILED, error_message=detail)
+        append_job_event(
+            job_id,
+            'fetch_failed',
+            detail,
+            level='error',
+            details={'terminal_status': status, 'fetch_detail': fetch_detail},
+        )
         notify_user(user_id, chat_id, job_id, STATUS_FAILED, error_message=detail, tool=tool)
         return
 
@@ -368,6 +337,12 @@ def process_job(job):
     result_tool = result.get('toolset', tool)
 
     update_job_status(job_id, STATUS_COMPLETED, output_url=json.dumps(output_urls), thumbnail_url=thumbnail_url)
+    append_job_event(
+        job_id,
+        'completed',
+        f'Fetched {len(output_urls)} output image(s)',
+        details={'terminal_status': status, 'tool': result_tool},
+    )
     notify_user(user_id, chat_id, job_id, STATUS_COMPLETED, output_urls=output_urls, tool=result_tool)
     return
 

@@ -24,6 +24,7 @@ SCHEDULER_DIR = get_scheduler_dir()
 DB_FILE = SCHEDULER_DIR / 'jobs.db'
 PID_FILE = SCHEDULER_DIR / 'worker.pid'
 LOG_FILE = SCHEDULER_DIR / 'worker.log'
+JOB_EVENTS_LOG_FILE = SCHEDULER_DIR / 'job_events.log'
 
 
 class AiriLabConfig:
@@ -203,6 +204,7 @@ class AiriLabConfig:
             'project_file': str(PROJECT_FILE),
             'db_file': str(DB_FILE),
             'log_file': str(LOG_FILE),
+            'job_events_log_file': str(JOB_EVENTS_LOG_FILE),
             'worker_pid_file': str(PID_FILE),
             'worker_pid': worker_pid,
             'worker_running': worker_running,
@@ -242,6 +244,7 @@ if __name__ == '__main__':
         print(f"worker_running: {health['worker_running']}")
         print(f"worker_pid: {health['worker_pid']}")
         print(f"db: {health['db_file']}")
+        print(f"job_events_log: {health['job_events_log_file']}")
         print('jobs:')
         print(f"  pending: {health['jobs']['pending']}")
         print(f"  processing: {health['jobs']['processing']}")

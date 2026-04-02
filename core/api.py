@@ -21,6 +21,16 @@ except ImportError:  # pragma: no cover
     from auth import AiriLabAuth
     from upload import AiriLabUpload
 
+try:
+    from .job_store import append_job_event, init_db as init_job_store, save_job as save_job_record
+except ImportError:  # pragma: no cover
+    try:
+        from job_store import append_job_event, init_db as init_job_store, save_job as save_job_record
+    except ImportError:  # pragma: no cover
+        append_job_event = None
+        init_job_store = None
+        save_job_record = None
+
 # API 端点
 GENERATE_URL = "https://cn.airilab.com/api/Universal/Generate"
 WORKFLOW_MJ = 0
@@ -307,6 +317,40 @@ class AiriLabAPI:
             if result.get("status") == 200:
                 data = result.get("data", {})
                 job_id = data.get("jobId")
+
+                # Persist submission so background worker can pick up this job.
+                if job_id and init_job_store and save_job_record:
+                    try:
+                        init_job_store()
+                        tool_map = {
+                            WORKFLOW_MJ: "mj",
+                            WORKFLOW_UPSCALE: "upscale",
+                            WORKFLOW_ATMOSPHERE: "atmosphere",
+                        }
+                        user_id = str(kwargs.get("user_id") or kwargs.get("userId") or "unknown")
+                        chat_id = str(kwargs.get("chat_id") or kwargs.get("chatId") or "unknown")
+                        tool = str(kwargs.get("tool") or tool_map.get(workflow_id, "unknown"))
+                        input_params = {
+                            "workflow_id": workflow_id,
+                            "payload": payload,
+                        }
+                        save_job_record(
+                            job_id=job_id,
+                            user_id=user_id,
+                            chat_id=chat_id,
+                            tool=tool,
+                            input_params=input_params,
+                        )
+                        if append_job_event:
+                            append_job_event(
+                                job_id,
+                                "submitted",
+                                "Job accepted by API and queued for worker polling",
+                                details={"workflow_id": workflow_id, "tool": tool},
+                            )
+                    except Exception:
+                        # Do not fail user-visible submit if local queue persistence fails.
+                        pass
                 
                 return {
                     'success': True,

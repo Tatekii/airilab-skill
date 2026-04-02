@@ -1,6 +1,17 @@
 ﻿# AiriLab Skill 更新日志
 
+## [1.4.4] 2026-04-02 - Queue Persistence and Job Traceability
 
+### Added
+- Added shared persistence module `core/job_store.py` for `jobs` and `job_events` tables.
+- Added structured job-event stream:
+  - DB table: `job_events`
+  - File log: `scheduler/job_events.log`
+- Added `scripts/job_trace.py` to inspect one job's local lifecycle (job row + ordered events) by `jobId`.
+
+### Fixed
+- Updated `core/api.py`: after successful submit (`status==200` with `jobId`), job is now written to local `jobs.db` immediately so worker polling can reliably pick it up.
+- Updated `scheduler/worker.py`: each lifecycle step now writes traceable events (`status_polled`, `in_progress`, `fetch_failed`, `completed`, `timeout`) for postmortem analysis.
 ## [1.4.3] 2026-04-02 - Upload Quota-Exceeded Handling
 
 ### Fixed
@@ -157,5 +168,6 @@ _鍏?4 寮犲浘鐗嘷
 ## [1.0.0] 2026-03-31 - 鍒濆鏁村悎鐗堟湰
 
 鏁村悎 airi-auth, airi-upload, airi-project, api-list 鍥涗釜鎶€鑳姐€?
+
 
 
