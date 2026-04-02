@@ -1,6 +1,14 @@
 ﻿# AiriLab Skill 更新日志
 
 
+## [1.4.3] 2026-04-02 - Upload Quota-Exceeded Handling
+
+### Fixed
+- Added explicit quota handling in `core/upload.py` for upload responses like:
+  - `status: 203`
+  - `message: "Standard Generation limit exceeded"`
+- Upload now returns a clear user-facing quota error instead of a generic upload failure.
+
 ## [1.4.2] 2026-04-01 - Async Submit Response Rule
 
 ### Changed
