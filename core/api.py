@@ -442,10 +442,22 @@ class AiriLabAPI:
         杩斿洖:
             dict: 鎻愪氦缁撴灉
         """
+        refs = reference_images or []
+        if len(refs) > 3:
+            return {
+                'success': False,
+                'job_id': None,
+                'message': 'MJ supports at most 3 reference images.',
+                'needs_auth': False,
+                'needs_project': False,
+                'round_complete': False,
+                'notify_async': False
+            }
+
         return self.submit_task(
             workflow_id=WORKFLOW_MJ,
             prompt=prompt,
-            reference_images=reference_images,
+            reference_images=refs,
             image_count=image_count
         )
     
@@ -506,9 +518,15 @@ if __name__ == "__main__":
                        help="宸ュ叿绫诲瀷")
     parser.add_argument("--prompt", help="Prompt text (for mj and atmosphere)")
     parser.add_argument("--base-image", help="Base image URL (for upscale and atmosphere)")
+    parser.add_argument(
+        "--reference-image",
+        action="append",
+        help="Reference image URL, repeat this option to pass multiple images",
+    )
     parser.add_argument("--image-count", type=int, default=4, help="鐢熸垚鍥剧墖鏁伴噺")
     
     args = parser.parse_args()
+    reference_images = args.reference_image or []
     
     config = AiriLabConfig()
     api = AiriLabAPI(config)
@@ -516,8 +534,14 @@ if __name__ == "__main__":
     if args.tool == "mj":
         if not args.prompt:
             print("鉂?閿欒锛歁J 妯″紡闇€瑕?--prompt 鍙傛暟")
+        elif len(reference_images) > 3:
+            print("ERR MJ supports at most 3 reference images.")
         else:
-            result = api.mj_render(args.prompt, image_count=args.image_count)
+            result = api.mj_render(
+                args.prompt,
+                reference_images=reference_images,
+                image_count=args.image_count
+            )
             if result['success']:
                 print(f"鉁?{result['message']}")
             else:
@@ -536,10 +560,13 @@ if __name__ == "__main__":
     elif args.tool == "atmosphere":
         if not args.base_image or not args.prompt:
             print("鉂?閿欒锛歛tmosphere 闇€瑕?--base-image 鍜?--prompt 鍙傛暟")
+        elif len(reference_images) > 1:
+            print("ERR Atmosphere supports at most 1 reference image.")
         else:
             result = api.atmosphere_transform(
                 args.base_image,
                 args.prompt,
+                reference_image=reference_images[0] if reference_images else None,
                 image_count=args.image_count
             )
             if result['success']:
