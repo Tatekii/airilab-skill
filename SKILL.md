@@ -111,7 +111,8 @@ contentFR: "Changez rapidement entre la météo et les saisons\nScénarios appli
 - 运行根目录：优先使用环境变量 `AIRILAB_HOME`，未设置时默认 `~/.openclaw/skills/airilab`。
 - `config/.env`：token 与登录相关信息。
 - `config/project_config.json`：当前项目上下文。
-- `scheduler/jobs.db`：异步任务状态。
+- `scheduler/jobs.json`：异步任务状态缓存（JSON）。
+- `scheduler/job_events.jsonl`：任务生命周期事件流（JSONL）。
 - `scheduler/worker.log`：worker 运行日志。
 - `scheduler/worker.pid`：worker 单实例锁文件。
 

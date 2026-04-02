@@ -6,7 +6,6 @@ Unified config and runtime health management for AiriLab.
 import base64
 import json
 import os
-import sqlite3
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -16,15 +15,20 @@ try:
 except ImportError:  # pragma: no cover
     from paths import get_airilab_home, get_config_dir, get_scheduler_dir, ensure_runtime_dirs
 
+try:
+    from .job_store import EVENTS_LOG_FILE, JOBS_FILE, get_job_counts, init_db as init_job_store
+except ImportError:  # pragma: no cover
+    from job_store import EVENTS_LOG_FILE, JOBS_FILE, get_job_counts, init_db as init_job_store
+
 CONFIG_DIR = get_config_dir()
 TOKEN_FILE = CONFIG_DIR / '.env'
 PROJECT_FILE = CONFIG_DIR / 'project_config.json'
 
 SCHEDULER_DIR = get_scheduler_dir()
-DB_FILE = SCHEDULER_DIR / 'jobs.db'
+JOBS_CACHE_FILE = JOBS_FILE
 PID_FILE = SCHEDULER_DIR / 'worker.pid'
 LOG_FILE = SCHEDULER_DIR / 'worker.log'
-JOB_EVENTS_LOG_FILE = SCHEDULER_DIR / 'job_events.log'
+JOB_EVENTS_LOG_FILE = EVENTS_LOG_FILE
 
 
 class AiriLabConfig:
@@ -32,6 +36,7 @@ class AiriLabConfig:
 
     def __init__(self):
         ensure_runtime_dirs()
+        init_job_store()
 
     # ==================== Token ====================
 
@@ -173,28 +178,7 @@ class AiriLabConfig:
             except Exception:
                 worker_running = False
 
-        job_counts = {
-            'pending': 0,
-            'processing': 0,
-            'completed': 0,
-            'failed': 0,
-            'total': 0,
-        }
-
-        if DB_FILE.exists():
-            try:
-                conn = sqlite3.connect(DB_FILE)
-                cursor = conn.cursor()
-                cursor.execute('SELECT status, COUNT(1) FROM jobs GROUP BY status')
-                for row in cursor.fetchall():
-                    key = str(row[0])
-                    count = int(row[1])
-                    if key in job_counts:
-                        job_counts[key] = count
-                    job_counts['total'] += count
-                conn.close()
-            except Exception:
-                pass
+        job_counts = get_job_counts()
 
         return {
             'airilab_home': str(get_airilab_home()),
@@ -202,7 +186,7 @@ class AiriLabConfig:
             'scheduler_dir': str(SCHEDULER_DIR),
             'token_file': str(TOKEN_FILE),
             'project_file': str(PROJECT_FILE),
-            'db_file': str(DB_FILE),
+            'jobs_file': str(JOBS_CACHE_FILE),
             'log_file': str(LOG_FILE),
             'job_events_log_file': str(JOB_EVENTS_LOG_FILE),
             'worker_pid_file': str(PID_FILE),
@@ -243,7 +227,7 @@ if __name__ == '__main__':
         print(f"has_project: {health['has_project']}")
         print(f"worker_running: {health['worker_running']}")
         print(f"worker_pid: {health['worker_pid']}")
-        print(f"db: {health['db_file']}")
+        print(f"jobs_file: {health['jobs_file']}")
         print(f"job_events_log: {health['job_events_log_file']}")
         print('jobs:')
         print(f"  pending: {health['jobs']['pending']}")

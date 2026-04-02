@@ -1,5 +1,14 @@
 ﻿# AiriLab Skill 更新日志
 
+## [1.4.5] 2026-04-02 - JSON Cache Storage (No SQLite)
+
+### Changed
+- Replaced local SQLite cache with JSON-based storage in core/job_store.py.
+- Job cache now persists to scheduler/jobs.json.
+- Job event stream now persists to scheduler/job_events.jsonl.
+- scheduler/worker.py now reads and updates job lifecycle from JSON cache only.
+- core/config.py health now reports jobs_file (JSON cache path) instead of db.
+- scripts/job_trace.py now reads job record and event timeline from JSON files only.
 ## [1.4.4] 2026-04-02 - Queue Persistence and Job Traceability
 
 ### Added
@@ -168,6 +177,7 @@ _鍏?4 寮犲浘鐗嘷
 ## [1.0.0] 2026-03-31 - 鍒濆鏁村悎鐗堟湰
 
 鏁村悎 airi-auth, airi-upload, airi-project, api-list 鍥涗釜鎶€鑳姐€?
+
 
 
 

@@ -17,13 +17,13 @@ AIRILAB_PATH = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(AIRILAB_PATH))
 
 from core.paths import ensure_runtime_dirs, get_scheduler_dir  # noqa: E402
-from core.job_store import append_job_event, get_db_connection, init_db as init_job_store  # noqa: E402
+from core.job_store import append_job_event, get_pending_jobs, init_db as init_job_store, update_job_status  # noqa: E402
 
 ensure_runtime_dirs()
 
 DATA_DIR = get_scheduler_dir()
 SCRIPTS_DIR = AIRILAB_PATH / 'scripts'
-DB_PATH = DATA_DIR / 'jobs.db'
+JOBS_FILE = DATA_DIR / 'jobs.json'
 PID_FILE = DATA_DIR / 'worker.pid'
 LOG_FILE = DATA_DIR / 'worker.log'
 
@@ -116,60 +116,7 @@ def startup_self_check() -> None:
 
 def init_db():
     init_job_store()
-    logger.info('database initialized')
-
-
-def get_pending_jobs():
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        '''
-        SELECT * FROM jobs
-        WHERE status IN (?, ?)
-        ORDER BY submitted_at ASC
-        LIMIT 50
-        ''',
-        (STATUS_PENDING, STATUS_PROCESSING),
-    )
-    jobs = cursor.fetchall()
-    conn.close()
-    return jobs
-
-
-def update_job_status(job_id: str, status: str, output_url: str = None, thumbnail_url: str = None, error_message: str = None):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    if status == STATUS_COMPLETED:
-        cursor.execute(
-            '''
-            UPDATE jobs
-            SET status = ?, completed_at = ?, output_url = ?, thumbnail_url = ?
-            WHERE job_id = ?
-            ''',
-            (status, datetime.now().isoformat(), output_url, thumbnail_url, job_id),
-        )
-    elif status == STATUS_FAILED:
-        cursor.execute(
-            '''
-            UPDATE jobs
-            SET status = ?, completed_at = ?, error_message = ?
-            WHERE job_id = ?
-            ''',
-            (status, datetime.now().isoformat(), error_message, job_id),
-        )
-    else:
-        cursor.execute(
-            '''
-            UPDATE jobs
-            SET status = ?, attempts = attempts + 1
-            WHERE job_id = ?
-            ''',
-            (status, job_id),
-        )
-
-    conn.commit()
-    conn.close()
+    logger.info('json store initialized')
 
 
 def check_job_status(job_id: str) -> str:
@@ -351,7 +298,7 @@ def run():
     logger.info('=' * 60)
     logger.info('AiriLab worker starting')
     logger.info(f'data_dir={DATA_DIR}')
-    logger.info(f'db={DB_PATH}')
+    logger.info(f'jobs_file={JOBS_FILE}')
     logger.info(f'poll_interval={POLL_INTERVAL}s timeout={TIMEOUT_MINUTES}m max_attempts={MAX_ATTEMPTS}')
 
     startup_self_check()
