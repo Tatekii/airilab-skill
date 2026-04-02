@@ -176,3 +176,8 @@ python ~/.openclaw/skills/airilab/core/config.py health
 - 当缺少参数时，只提问缺失参数，不提供“手动执行命令”替代方案。
 - 执行后返回结果摘要（成功/失败、关键字段、下一步），不要只返回命令文本。
 - 若必须让用户介入，只允许两类：输入验证码、确认业务选择（例如项目选择）。
+
+## Payload 构建强约束
+- 调用 AiriLab 图像工作流时，必须通过 core/api.py 的 _build_payload(...) 构建请求体。
+- 禁止在 agent 对话执行层、临时脚本、或其他模块中手工拼装 payload。
+- 如需新增字段，必须先修改 _build_payload(...)，再由 submit_task(...) 发起请求。

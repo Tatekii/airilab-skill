@@ -129,7 +129,7 @@ class AiriLabAPI:
         返回:
             dict: 请求 payload
         """
-        # MJ 创意渲染工作流 (workflowId: 4)
+        # MJ 创意渲染工作流 (workflowId: 0)
         if workflow_id == WORKFLOW_MJ:
             payload = {
                 "model": 0,
@@ -230,20 +230,17 @@ class AiriLabAPI:
             payload = {
                 "workflowId": WORKFLOW_ATMOSPHERE,
                 "baseImage": base_image or "",
-                "height": kwargs.get('height', 816),
-                "width": kwargs.get('width', 1288),
                 "prompt": prompt,
                 "additionalPrompt": prompt,
                 "referenceImage": [
                     {"url": reference_images[0], "type": 0}
                 ] if reference_images and len(reference_images) > 0 else [],
+                "imageCount": image_count,
                 "language": "chs",
                 "teamId": project['teamId'],
                 "projectId": project['projectId'],
                 "projectName": project['projectName'],
-                "initialCNImage": null,
-                "additionalPrompt": "",
-                "referenceImage": [],
+                "initialCNImage": None,
                 "designLibraryName": "No Style",
                 "designLibraryId": 99,
                 "firstTierName": "No Style",
@@ -270,7 +267,9 @@ class AiriLabAPI:
                 "timeLapse": 0,
                 "cameraSpeed": 0,
                 "privateModel": "",
-                "imageCount": 1,
+                "height": kwargs.get('height', 816),
+                "width": kwargs.get('width', 1288),
+                "angleIndex": 0,
             }
         
         else:
@@ -310,6 +309,16 @@ class AiriLabAPI:
                 'needs_project': bool
             }
         """
+        # 强约束：调用方不得直接传 payload，必须经由 _build_payload 统一构建。
+        if 'payload' in kwargs:
+            return {
+                'success': False,
+                'job_id': None,
+                'message': 'Invalid call: direct payload override is not allowed. Use _build_payload only.',
+                'needs_auth': False,
+                'needs_project': False
+            }
+
         # 确保已准备好
         ready = self._ensure_ready()
         
