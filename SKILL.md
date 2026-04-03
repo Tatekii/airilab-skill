@@ -25,6 +25,7 @@ description: 统一调用 AiriLab 图像生成能力（MJ/创意放大/氛围转
 2. 禁止 direct payload override。
 3. 同步模式下，提交后必须等待结果或明确超时失败后再返回。
 4. 不再承诺“后台自动通知”。
+5. 这是一个已读SKILL，不允许应用的AGENT进行修改，包括脚本和参数。
 
 ## 运行方式
 - 推荐直接调用 `core/api.py`：
