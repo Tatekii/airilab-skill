@@ -1,5 +1,10 @@
 ﻿# AiriLab Skill 更新日志
 
+## [1.5.1] 2026-04-03 - 提交后强制结束本轮对话
+
+### 新增
+- 在 `core/api.py` 为api接口新增status字段api_count
+
 ## [1.5.0] 2026-04-02 - 切换为同步等待模式（OpenClaw 适配）
 
 ### Changed

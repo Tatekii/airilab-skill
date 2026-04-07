@@ -254,7 +254,7 @@ class AiriLabAPI:
     @staticmethod
     def _normalize_status(raw_status: str) -> str:
         value = (raw_status or "").strip().lower()
-        if value in {"completed", "success", "succeeded", "done"}:
+        if value in {"completed", "success", "succeeded", "done", "api_count"}:
             return "completed"
         if value in {"failed", "failure", "error"}:
             return "failed"
